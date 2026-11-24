@@ -39,6 +39,16 @@ main{max-width:440px;margin:0 auto;padding:28px 24px 40px;min-height:100svh;disp
 .seg button{font:500 15px Inter,sans-serif;min-height:40px;border:0;border-radius:9px;background:none;color:var(--ink);cursor:pointer}
 .seg button[aria-pressed=true]{background:var(--bg);box-shadow:0 1px 3px rgba(0,0,0,.18)}
 .seg button:disabled{opacity:.35;cursor:default}
+.rain{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:62px;padding:0 18px;margin-top:10px;border:1px solid var(--line);border-radius:16px;background:none;color:var(--ink);cursor:pointer;font:inherit}
+.rain[aria-pressed=true]{border-color:var(--go)}
+.rain:disabled{opacity:.5;cursor:default}
+.rtxt{display:flex;flex-direction:column;align-items:flex-start;line-height:1.15}
+.rtxt b{font:600 18px Inter,sans-serif}.rtxt small{color:var(--mute);font-size:13px}
+.rsw{position:relative;width:52px;height:32px;border-radius:999px;background:var(--line);transition:background .2s;flex:none}
+.rain[aria-pressed=true] .rsw{background:var(--go)}
+.rsw i{position:absolute;top:3px;left:3px;width:26px;height:26px;border-radius:50%;background:#fff;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.35)}
+.rain[aria-pressed=true] .rsw i{left:23px}
+@media(prefers-reduced-motion:reduce){.rsw,.rsw i{transition:none}}
 button:focus-visible,summary:focus-visible,input:focus-visible{outline:2px solid var(--go);outline-offset:2px}
 #btnConn{margin-top:20px;width:100%;min-height:50px;border:0;border-radius:14px;background:var(--ink);color:var(--bg);font:500 16px Inter,sans-serif;cursor:pointer}
 #btnConn[hidden]{display:none}
@@ -77,9 +87,12 @@ ol{padding-left:18px}
     <div class="seg" id="seg"></div>
   </section>
 
-  <section class="lim" id="spdSec" aria-label="Speed cap" hidden>
-    <div class="lbl"><span>Top speed (km/h)</span><span id="spdMsg"></span></div>
-    <div class="seg" id="spdSeg"></div>
+  <section class="lim" id="spdSec" aria-label="Rain mode" hidden>
+    <div class="lbl"><span>Rain mode</span><span id="spdMsg"></span></div>
+    <button id="rainBtn" class="rain" type="button" aria-pressed="false">
+      <span class="rtxt"><b id="rainState">Off</b><small id="rainSpeed">42 km/h top speed</small></span>
+      <span class="rsw"><i></i></span>
+    </button>
   </section>
 
   <button id="btnConn">Connect</button>
@@ -368,7 +381,7 @@ async function connect(){
   } finally { $('bnPress').hidden = true; }
 }
 
-async function openLink(){
+async function openLink(retried){
   pill('busy', 'Connecting');
   const server = await dev.gatt.connect();
   log('Connected to ' + (dev.name || dev.id));
@@ -385,7 +398,18 @@ async function openLink(){
   await sleep(250); rx = [];
   const name = ($('inName').value.trim() || dev.name || '').trim();
   if (!name) throw new Error('The scooter did not report its Bluetooth name. Enter it under Pairing password, then connect again.');
-  await handshake(name);
+  try { await handshake(name); }
+  catch (e) {
+    // SHU replaced the stored key since we last paired, so our saved password no
+    // longer works. Reconnect clean once and pair by button, without the user retrying.
+    if (e.retryClean && !retried) {
+      log('Re-pairing after another app changed the key');
+      try { await dev.gatt.disconnect(); } catch {}
+      await sleep(1500);
+      return openLink(true);
+    }
+    throw e;
+  }
   await findBms(name);
   pill('on', 'Connected'); running = true;
   poll();
@@ -435,7 +459,7 @@ async function handshake(name){
       // A password we set ourselves no longer authenticates: SHU (or the Segway app)
       // re-paired with the scooter since and replaced it. Drop it and re-pair by button.
       saveProf(name, {pwd: null});
-      throw new Error('Another app (SHU) paired with the scooter after this one, so the stored key changed. Tap Connect and press the power button once to pair this phone again.');
+      const e = new Error('key-changed'); e.retryClean = true; throw e;
     }
   } else {
     // No saved password: button pairing. This works only on a scooter that has
@@ -608,7 +632,8 @@ async function setLimit(){
   limBusy = false; render();
 }
 
-// ---- top speed (register 0x48, km/h in the high byte) ----
+// ---- top speed (register 0x48, km/h in the high byte): Rain on/off toggle ----
+const RAIN_SPEED = 25;
 let spdBusy = false;
 function speedCeiling(){ return demo ? 42 : Math.max(D.vmax || 0, store.get('vceil') || 0, 25); }
 function renderSpd(){
@@ -616,11 +641,18 @@ function renderSpd(){
   $('spdSec').hidden = !have;
   if (!have) return;
   const ceil = speedCeiling();
-  const opts = [...new Set([20, 25, 30, 35, ceil].filter(v => v <= ceil))].sort((a, b) => a - b);
-  const cur = D.vmax, live = (running || demo) && !spdBusy;
-  $('spdSeg').innerHTML = opts.map(v => `<button type="button" data-v="${v}" aria-pressed="${v === cur}"${live ? '' : ' disabled'}>${v === ceil && v > 35 ? v + ' max' : v}</button>`).join('');
+  const on = D.vmax != null && D.vmax <= RAIN_SPEED;
+  const btn = $('rainBtn');
+  btn.setAttribute('aria-pressed', String(on));
+  btn.disabled = !(running || demo) || spdBusy;
+  $('rainState').textContent = on ? 'On' : 'Off';
+  $('rainSpeed').textContent = (on ? RAIN_SPEED : ceil) + ' km/h top speed';
 }
-$('spdSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b || b.disabled) return; const v = +b.dataset.v; if (v === D.vmax) return; setSpeed(v); });
+$('rainBtn').addEventListener('click', () => {
+  if ($('rainBtn').disabled) return;
+  const on = D.vmax != null && D.vmax <= RAIN_SPEED;
+  setSpeed(on ? speedCeiling() : RAIN_SPEED);
+});
 async function setSpeed(v){
   const m = $('spdMsg');
   if (v > speedCeiling()) { m.innerHTML = '<span class="bad">Above your region limit</span>'; return; }
