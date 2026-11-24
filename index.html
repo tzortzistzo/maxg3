@@ -350,7 +350,7 @@ async function connect(){
   } finally { $('bnPress').hidden = true; }
 }
 
-async function openLink(retried){
+async function openLink(){
   pill('busy', 'Connecting');
   const server = await dev.gatt.connect();
   log('Connected to ' + (dev.name || dev.id));
@@ -367,18 +367,7 @@ async function openLink(retried){
   await sleep(250); rx = [];
   const name = ($('inName').value.trim() || dev.name || '').trim();
   if (!name) throw new Error('The scooter did not report its Bluetooth name. Enter it under Pairing password, then connect again.');
-  try { await handshake(name); }
-  catch (e) {
-    // A stale saved password poisons this session, so the following button
-    // pairing is ignored. Drop the bad password and reconnect clean, once.
-    if (e.retryClean && !retried) {
-      log('Reconnecting for a clean pairing');
-      try { await dev.gatt.disconnect(); } catch {}
-      await sleep(1500);
-      return openLink(true);
-    }
-    throw e;
-  }
+  await handshake(name);
   await findBms(name);
   pill('on', 'Connected'); running = true;
   poll();
@@ -415,29 +404,31 @@ async function handshake(name){
 
   let pwd = p.pwd ? unhex(p.pwd) : null;
   let a = null;
-  // If we hold a password (pasted, or confirmed on a past connection), try it first.
+  // A scooter already paired with another app (stored=true) keeps a 16-byte password
+  // inside it and refuses every new button pairing, confirmed on real G3 hardware.
+  // The only way in is that existing password, so when one is saved we authenticate
+  // with it directly and never attempt a button pairing.
   if (pwd) {
     try { a = await tryAuth(pwd); }
     catch {
-      // The saved password is stale. Clear it and restart on a clean connection:
-      // a failed AUTH leaves this session in a state where button pairing is ignored.
-      log('Saved password did not work');
-      saveProf(name, {pwd: null});
-      const e = new Error('retry-clean'); e.retryClean = true; throw e;
+      log('Pairing password did not authenticate');
+      throw new Error('The pairing password did not work. Make sure it is the 32-hex key this scooter is already paired with (the one SHU uses, or the <serial>_decrypt value from the Segway app). Open "Pairing & log" to paste it again.');
     }
-  }
-  // Otherwise (or if that failed): SET_PWD, approved with the power button, then AUTH.
-  if (!a) {
+    if (!a || a.idx !== 1) throw new Error('The scooter rejected that pairing password. Check you copied the right one.');
+  } else {
+    // No saved password: button pairing. This works only on a scooter that has
+    // NEVER been paired with another app.
     pwd = await setPassword(name, authP, stored, null);
     try { a = await tryAuth(pwd); }
     catch {
-      log('AUTH unanswered, re-asserting password');
       try { await request(board, C_PWD, 0, pwd, C_PWD, 8000); } catch {}
       try { a = await tryAuth(pwd); }
-      catch { throw new Error('The scooter did not accept this phone. Switch it off and on, make sure the Segway app and SHU are closed, then tap Connect and press the power button once when asked.'); }
+      catch {
+        throw new Error('The scooter did not finish the pairing. Make sure no other app or Bluefy tab is connected to it (SHU in another tab is the usual cause), switch it off and on, then try once more.');
+      }
     }
+    if (!a || a.idx !== 1) throw new Error('The scooter rejected this phone. Tap Connect and press the power button when asked.');
   }
-  if (!a || a.idx !== 1) { saveProf(name, {pwd: null}); throw new Error('The scooter rejected this phone. Tap Connect and press the power button when asked.'); }
   saveProf(name, {pwd: hex(pwd)}); store.set('last', name);
   showPwd(name);
   log('Authenticated');
@@ -448,7 +439,7 @@ async function setPassword(name, authP, stored, have){
   const pwd = have || crypto.getRandomValues(new Uint8Array(16));
   // The password is saved only after AUTH confirms it (see handshake), so a pairing
   // the scooter never accepted can't get stored and block later attempts.
-  const until = Date.now() + 90000;
+  const until = Date.now() + 90000; undecryptable = 0;
   $('bnPress').hidden = false; pill('busy', 'Waiting for button');
   // Tick the countdown every second on its own, so it stays smooth while each
   // pairing request waits.
@@ -472,7 +463,9 @@ async function setPassword(name, authP, stored, have){
       }
     }
   } finally { clearInterval(ticker); $('bnPress').hidden = true; }
-  if (!sawPending) throw new Error('The scooter never answered the pairing request. Another app is probably still holding it: switch the scooter off and on, force-close the Segway app, SHU and Bluefy, then open only Bluefy and try again.');
+  if (!sawPending) throw new Error(undecryptable
+    ? 'Another app is holding the scooter right now, so it ignored this pairing. Most likely SHU is still open in another Bluefy tab — close every Bluefy tab except this one and force-close the Segway app, switch the scooter off and on, then try again.'
+    : 'The scooter never answered the pairing request. Switch it off and on, make sure no other app or Bluefy tab is connected to it, and try again.');
   log('No confirmation yet; will try the pairing we sent');
   return pwd;
 }
