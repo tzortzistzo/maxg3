@@ -89,7 +89,7 @@ ol{padding-left:18px}
       <li>Tap Connect, choose the scooter, press its power button once.</li>
       <li>If it won't pair, paste the existing pairing password below.</li>
     </ol>
-    <label style="display:flex;gap:8px;align-items:center;min-height:44px"><input type="checkbox" id="chkAll" style="width:20px;min-height:20px"> Show all Bluetooth devices when connecting</label>
+    <label style="display:flex;gap:8px;align-items:center;min-height:44px"><input type="checkbox" id="chkAll" style="width:20px;min-height:20px"> Show all Bluetooth devices next time</label>
     <label for="inName">Bluetooth name (optional)</label>
     <input id="inName" autocomplete="off" autocapitalize="characters" spellcheck="false">
     <label for="inPwd">Pairing password (32 hex)</label>
@@ -320,8 +320,10 @@ async function connect(){
     const opt = [SVC_NB, SVC_NORDIC];
     const all = $('chkAll').checked;
     try {
-      dev = await navigator.bluetooth.requestDevice(all ? {acceptAllDevices: true, optionalServices: opt} :
-        {filters: [{namePrefix: '1CG'}, {namePrefix: 'NBScooter'}, {namePrefix: 'Segway'}, {services: [SVC_NB]}], optionalServices: opt});
+      const known = store.get('picked');
+      dev = await navigator.bluetooth.requestDevice(all || !known ? {acceptAllDevices: true, optionalServices: opt} :
+        {filters: [{name: known}], optionalServices: opt});
+      if (dev.name) store.set('picked', dev.name);
     } catch (e) {
       if (e.name !== 'TypeError') throw e;
       dev = await navigator.bluetooth.requestDevice({acceptAllDevices: true, optionalServices: opt});
@@ -572,7 +574,7 @@ $('btnCopyPwd').addEventListener('click', async () => {
   try { await navigator.clipboard.writeText(p); $('pwdMsg').textContent = 'Copied. Keep it somewhere private.'; } catch { $('pwdMsg').textContent = p; }
 });
 $('btnForget').addEventListener('click', () => {
-  const n = curName(); if (n) store.del('p:' + n); store.del('last');
+  const n = curName(); if (n) store.del('p:' + n); store.del('last'); store.del('picked');
   $('pwdMsg').textContent = 'Forgotten. The next connection will ask for the power button.';
 });
 $('btnCopyLog').addEventListener('click', async () => { try { await navigator.clipboard.writeText(lines.join('\n')); } catch {} });
