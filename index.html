@@ -399,22 +399,28 @@ async function handshake(name){
   D.serial = serial;
   sess.setAuth(authP); sess.startSN(); rx = [];
 
-  let pwd = p.pwd ? unhex(p.pwd) : null;
-  // Phase 2: SET_PWD (button approval) unless we already hold a password
-  if (!(pwd && stored)) pwd = await setPassword(name, authP, stored, pwd);
-  // Phase 3: AUTH
   const payload = new Uint8Array(14); payload.set(ascii(serial).slice(0, 14));
-  await sess.setKey(pwd, authP);
-  let a;
-  try { a = await request(board, C_AUTH, 0, payload, C_AUTH, 4000); }
-  catch {
-    log('AUTH unanswered, re-asserting password');
-    try { await request(board, C_PWD, 0, pwd, C_PWD, 8000); } catch {}
-    await sess.setKey(pwd, authP);
-    try { a = await request(board, C_AUTH, 0, payload, C_AUTH, 4000); }
-    catch { throw new Error('The scooter did not accept the pairing password. If you pasted one, check it; otherwise tap Forget scooter and connect again to re-pair with the button.'); }
+  const tryAuth = async p => { await sess.setKey(p, authP); return request(board, C_AUTH, 0, payload, C_AUTH, 4000); };
+
+  let pwd = p.pwd ? unhex(p.pwd) : null;
+  let a = null;
+  // If we hold a password (pasted, or confirmed on a past connection), try it first.
+  if (pwd) {
+    try { a = await tryAuth(pwd); }
+    catch { log('Saved password did not work; re-pairing with the button'); saveProf(name, {pwd: null}); pwd = null; }
   }
-  if (a.idx !== 1) { saveProf(name, {pwd: null}); throw new Error('The scooter rejected this phone. Connect again and press the power button when asked.'); }
+  // Otherwise (or if that failed): SET_PWD, approved with the power button, then AUTH.
+  if (!a) {
+    pwd = await setPassword(name, authP, stored, null);
+    try { a = await tryAuth(pwd); }
+    catch {
+      log('AUTH unanswered, re-asserting password');
+      try { await request(board, C_PWD, 0, pwd, C_PWD, 8000); } catch {}
+      try { a = await tryAuth(pwd); }
+      catch { throw new Error('The scooter did not accept this phone. Switch it off and on, make sure the Segway app and SHU are closed, then tap Connect and press the power button once when asked.'); }
+    }
+  }
+  if (!a || a.idx !== 1) { saveProf(name, {pwd: null}); throw new Error('The scooter rejected this phone. Tap Connect and press the power button when asked.'); }
   saveProf(name, {pwd: hex(pwd)}); store.set('last', name);
   showPwd(name);
   log('Authenticated');
@@ -423,11 +429,8 @@ async function handshake(name){
 async function setPassword(name, authP, stored, have){
   await sess.setKey(ascii(name), authP);
   const pwd = have || crypto.getRandomValues(new Uint8Array(16));
-  // Save the password we are about to send straight away. The scooter replies to
-  // SET_PWD with two frames - "pending" (idx 0) and then "accepted" (idx 1) - and
-  // once it has accepted, this password IS the scooter's password. Saving it now
-  // means even if we miss the accept frame, the next connection authenticates with it.
-  if (!have) saveProf(name, {pwd: hex(pwd)});
+  // The password is saved only after AUTH confirms it (see handshake), so a pairing
+  // the scooter never accepted can't get stored and block later attempts.
   const until = Date.now() + 90000;
   $('bnPress').hidden = false; pill('busy', 'Waiting for button');
   // Tick the countdown every second on its own, so it stays smooth while each
