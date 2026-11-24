@@ -22,7 +22,7 @@ main{max-width:440px;margin:0 auto;padding:28px 24px 40px;min-height:100svh;disp
 #pill{display:flex;align-items:center;gap:6px}#pill i{width:6px;height:6px;border-radius:50%;background:var(--mute)}
 #pill.on i{background:var(--go)}#pill.busy i{background:var(--warn);animation:bl 1s infinite}#pill.err i{background:var(--bad)}
 @keyframes bl{50%{opacity:.2}}
-.hero{flex:1;display:flex;flex-direction:column;justify-content:center;padding:40px 0 28px}
+.hero{display:flex;flex-direction:column;padding:12px 0 24px}
 #pct{font:200 clamp(96px,32vw,148px)/.9 Inter,sans-serif;letter-spacing:-.04em;font-variant-numeric:tabular-nums}
 #pct small{font-size:.32em;font-weight:300;color:var(--mute);letter-spacing:0;margin-left:4px}
 #state{font-weight:500;margin-top:14px}#sub{color:var(--mute);font-size:15px}
@@ -45,7 +45,7 @@ button:focus-visible,summary:focus-visible,input:focus-visible{outline:2px solid
 .msg{font-size:14px;color:var(--mute);margin-top:12px}.msg[hidden]{display:none}
 .msg.press{color:var(--warn)}.ok{color:var(--go)}.bad{color:var(--bad)}
 .link{background:none;border:0;color:var(--ink);text-decoration:underline;font:inherit;cursor:pointer;padding:0}
-details{margin-top:24px;font-size:14px;color:var(--mute)}
+details{margin-top:auto;padding-top:24px;font-size:14px;color:var(--mute)}
 summary{cursor:pointer;min-height:44px;display:flex;align-items:center;list-style:none}summary::-webkit-details-marker{display:none}
 label{display:block;margin:12px 0 4px}
 input{font:16px Inter,sans-serif;width:100%;min-height:44px;padding:0 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
@@ -98,6 +98,19 @@ ol{padding-left:18px}
     <p id="pwdMsg"></p>
     <pre id="log"></pre>
     <p>Unofficial, not affiliated with Segway-Ninebot. Only changes the charge limit.</p>
+  </details>
+
+  <details>
+    <summary>Find a setting (advanced)</summary>
+    <p>Finds which value a setting lives in, so it can be added safely. Scan once, change the setting in the Segway app (for example set Sport's speed lower), then scan again — what changed is shown below. Reading only; nothing is written.</p>
+    <div class="row">
+      <label style="margin:0">From <input id="scFrom" value="40" inputmode="latin" autocapitalize="off" spellcheck="false" style="width:4em;display:inline-block"></label>
+      <label style="margin:0">to <input id="scTo" value="7F" inputmode="latin" autocapitalize="off" spellcheck="false" style="width:4em;display:inline-block"></label>
+      <button id="btnScan">Scan now</button><button id="btnScanReset">Reset</button>
+    </div>
+    <p id="scMsg"></p>
+    <pre id="scOut"></pre>
+    <button id="btnScanCopy">Copy result</button>
   </details>
 </main>
 <script>
@@ -296,7 +309,7 @@ function listen(expect, timeout, matchIdx = null){
   });
   const p = chain.then(run, run); chain = p.catch(() => {}); return p;
 }
-async function read(target, idx, len){ const f = await request(target, C_READ, idx, Uint8Array.of(len), C_RRESP, 2500, idx); return f.data.slice(0, len); }
+async function read(target, idx, len, timeout = 2500){ const f = await request(target, C_READ, idx, Uint8Array.of(len), C_RRESP, timeout, idx); return f.data.slice(0, len); }
 
 function onNotify(e){
   const v = new Uint8Array(e.target.value.buffer.slice(e.target.value.byteOffset, e.target.value.byteOffset + e.target.value.byteLength));
@@ -616,6 +629,43 @@ $('btnForget').addEventListener('click', () => {
   $('pwdMsg').textContent = 'Forgotten. The next connection will ask for the power button.';
 });
 $('btnCopyLog').addEventListener('click', async () => { try { await navigator.clipboard.writeText(lines.join('\n')); } catch {} });
+
+// ---------- scan (read-only setting finder) ----------
+let scanPrev = null, scanning = false;
+async function doScan(){
+  if (scanning) return;
+  if (!running && !demo) { $('scMsg').textContent = 'Connect to the scooter first.'; return; }
+  const from = parseInt($('scFrom').value, 16), to = parseInt($('scTo').value, 16);
+  if (isNaN(from) || isNaN(to) || from < 0 || to > 0xff || to < from || to - from > 0xff) {
+    $('scMsg').innerHTML = '<span class="bad">Use hex values 00–FF, from ≤ to.</span>'; return;
+  }
+  scanning = true; $('btnScan').disabled = true;
+  const now = {};
+  for (let i = from; i <= to; i++) {
+    $('scMsg').textContent = `Scanning 0x${i.toString(16).padStart(2,'0')} (${i - from + 1}/${to - from + 1})…`;
+    if (demo) { now[i] = (i * 7 + (scanPrev ? 1 : 0) * (i === 0x5a ? 3 : 0)) & 0xffff; continue; }
+    try { const d = await read(VCU, i, 2, 600); now[i] = d[0] | d[1] << 8; } catch { /* no such register */ }
+  }
+  $('btnScan').disabled = false; scanning = false;
+  const hex2 = n => n.toString(16).padStart(2, '0').toUpperCase();
+  const hex4 = n => n.toString(16).padStart(4, '0').toUpperCase();
+  if (!scanPrev) {
+    scanPrev = now;
+    const n = Object.keys(now).length;
+    $('scMsg').innerHTML = `<span class="ok">Captured ${n} values.</span> Now change the setting in the Segway app, then scan again.`;
+    $('scOut').textContent = Object.keys(now).map(k => `0x${hex2(+k)} = ${now[k]} (0x${hex4(now[k])})`).join('\n');
+    return;
+  }
+  const diff = [];
+  for (const k of Object.keys(now)) if (k in scanPrev && scanPrev[k] !== now[k]) diff.push(`0x${hex2(+k)} : ${scanPrev[k]} -> ${now[k]}   (0x${hex4(scanPrev[k])} -> 0x${hex4(now[k])})`);
+  for (const k of Object.keys(now)) if (!(k in scanPrev)) diff.push(`0x${hex2(+k)} : (new) -> ${now[k]}`);
+  $('scMsg').innerHTML = diff.length ? `<span class="ok">${diff.length} value(s) changed.</span> Send me this.` : 'Nothing changed. Make sure the setting really changed in the Segway app, then scan again.';
+  $('scOut').textContent = diff.join('\n') || '(no change)';
+  scanPrev = now;
+}
+$('btnScan').addEventListener('click', doScan);
+$('btnScanReset').addEventListener('click', () => { scanPrev = null; $('scOut').textContent = ''; $('scMsg').textContent = 'Baseline cleared.'; });
+$('btnScanCopy').addEventListener('click', async () => { try { await navigator.clipboard.writeText($('scOut').textContent); $('scMsg').textContent = 'Copied.'; } catch {} });
 
 // ---------- boot ----------
 const sleep = ms => new Promise(r => setTimeout(r, ms));
