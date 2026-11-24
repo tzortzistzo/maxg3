@@ -102,7 +102,7 @@ ol{padding-left:18px}
 
   <details>
     <summary>Find a setting (advanced)</summary>
-    <p>Finds which value a setting lives in, so it can be added safely. Scan once, change the setting in the Segway app (for example set Sport's speed lower), then scan again — what changed is shown below. Reading only; nothing is written.</p>
+    <p>Finds which value a setting lives in, so it can be added safely. It works step by step, not at the same time as SHU: Scan here, then disconnect and change one setting in SHU, then reconnect here and Scan again — what changed is shown below. The baseline is remembered while you switch to SHU. Reading only; nothing is written.</p>
     <div class="row">
       <label style="margin:0">From <input id="scFrom" value="40" inputmode="latin" autocapitalize="off" spellcheck="false" style="width:4em;display:inline-block"></label>
       <label style="margin:0">to <input id="scTo" value="7F" inputmode="latin" autocapitalize="off" spellcheck="false" style="width:4em;display:inline-block"></label>
@@ -631,7 +631,14 @@ $('btnForget').addEventListener('click', () => {
 $('btnCopyLog').addEventListener('click', async () => { try { await navigator.clipboard.writeText(lines.join('\n')); } catch {} });
 
 // ---------- scan (read-only setting finder) ----------
-let scanPrev = null, scanning = false;
+// The baseline is kept in localStorage, so it survives disconnecting here, switching
+// to SHU to change a setting, and reconnecting — the two scans need not be at once.
+let scanPrev = store.get('scan') || null, scanning = false;
+function scanStatus(){
+  $('scMsg').innerHTML = scanPrev
+    ? `<span class="ok">Baseline saved (${Object.keys(scanPrev).length} values).</span> Change the setting in SHU, reconnect here, then Scan now to see what changed.`
+    : 'No baseline yet. Scan now to take the first snapshot.';
+}
 async function doScan(){
   if (scanning) return;
   if (!running && !demo) { $('scMsg').textContent = 'Connect to the scooter first.'; return; }
@@ -650,21 +657,21 @@ async function doScan(){
   const hex2 = n => n.toString(16).padStart(2, '0').toUpperCase();
   const hex4 = n => n.toString(16).padStart(4, '0').toUpperCase();
   if (!scanPrev) {
-    scanPrev = now;
+    scanPrev = now; store.set('scan', now);
     const n = Object.keys(now).length;
-    $('scMsg').innerHTML = `<span class="ok">Captured ${n} values.</span> Now change the setting in the Segway app, then scan again.`;
+    $('scMsg').innerHTML = `<span class="ok">Baseline saved (${n} values).</span> Now change the setting in SHU, reconnect here, then Scan now again.`;
     $('scOut').textContent = Object.keys(now).map(k => `0x${hex2(+k)} = ${now[k]} (0x${hex4(now[k])})`).join('\n');
     return;
   }
   const diff = [];
   for (const k of Object.keys(now)) if (k in scanPrev && scanPrev[k] !== now[k]) diff.push(`0x${hex2(+k)} : ${scanPrev[k]} -> ${now[k]}   (0x${hex4(scanPrev[k])} -> 0x${hex4(now[k])})`);
   for (const k of Object.keys(now)) if (!(k in scanPrev)) diff.push(`0x${hex2(+k)} : (new) -> ${now[k]}`);
-  $('scMsg').innerHTML = diff.length ? `<span class="ok">${diff.length} value(s) changed.</span> Send me this.` : 'Nothing changed. Make sure the setting really changed in the Segway app, then scan again.';
+  $('scMsg').innerHTML = diff.length ? `<span class="ok">${diff.length} value(s) changed.</span> Copy result and send it to me.` : 'Nothing changed. Make sure the setting really changed in SHU, then scan again.';
   $('scOut').textContent = diff.join('\n') || '(no change)';
-  scanPrev = now;
+  scanPrev = now; store.set('scan', now);
 }
 $('btnScan').addEventListener('click', doScan);
-$('btnScanReset').addEventListener('click', () => { scanPrev = null; $('scOut').textContent = ''; $('scMsg').textContent = 'Baseline cleared.'; });
+$('btnScanReset').addEventListener('click', () => { scanPrev = null; store.del('scan'); $('scOut').textContent = ''; scanStatus(); });
 $('btnScanCopy').addEventListener('click', async () => { try { await navigator.clipboard.writeText($('scOut').textContent); $('scMsg').textContent = 'Copied.'; } catch {} });
 
 // ---------- boot ----------
@@ -675,6 +682,7 @@ $('btnConn').addEventListener('click', () => {
 });
 $('inName').value = store.get('name') || '';
 showPwd(store.get('last') || '');
+scanStatus();
 if (!navigator.bluetooth) $('bnNoBle').hidden = false;
 render();
 }
