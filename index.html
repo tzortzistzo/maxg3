@@ -350,7 +350,7 @@ async function connect(){
   } finally { $('bnPress').hidden = true; }
 }
 
-async function openLink(){
+async function openLink(retried){
   pill('busy', 'Connecting');
   const server = await dev.gatt.connect();
   log('Connected to ' + (dev.name || dev.id));
@@ -367,7 +367,18 @@ async function openLink(){
   await sleep(250); rx = [];
   const name = ($('inName').value.trim() || dev.name || '').trim();
   if (!name) throw new Error('The scooter did not report its Bluetooth name. Enter it under Pairing password, then connect again.');
-  await handshake(name);
+  try { await handshake(name); }
+  catch (e) {
+    // A stale saved password poisons this session, so the following button
+    // pairing is ignored. Drop the bad password and reconnect clean, once.
+    if (e.retryClean && !retried) {
+      log('Reconnecting for a clean pairing');
+      try { await dev.gatt.disconnect(); } catch {}
+      await sleep(1500);
+      return openLink(true);
+    }
+    throw e;
+  }
   await findBms(name);
   pill('on', 'Connected'); running = true;
   poll();
@@ -407,7 +418,13 @@ async function handshake(name){
   // If we hold a password (pasted, or confirmed on a past connection), try it first.
   if (pwd) {
     try { a = await tryAuth(pwd); }
-    catch { log('Saved password did not work; re-pairing with the button'); saveProf(name, {pwd: null}); pwd = null; }
+    catch {
+      // The saved password is stale. Clear it and restart on a clean connection:
+      // a failed AUTH leaves this session in a state where button pairing is ignored.
+      log('Saved password did not work');
+      saveProf(name, {pwd: null});
+      const e = new Error('retry-clean'); e.retryClean = true; throw e;
+    }
   }
   // Otherwise (or if that failed): SET_PWD, approved with the power button, then AUTH.
   if (!a) {
