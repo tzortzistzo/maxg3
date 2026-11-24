@@ -423,11 +423,15 @@ async function handshake(name){
   // with it directly and never attempt a button pairing.
   if (pwd) {
     try { a = await tryAuth(pwd); }
-    catch {
-      log('Pairing password did not authenticate');
-      throw new Error('The pairing password did not work. Make sure it is the 32-hex key this scooter is already paired with (the one SHU uses, or the <serial>_decrypt value from the Segway app). Open "Pairing & log" to paste it again.');
+    catch { a = null; }
+    if (!a || a.idx !== 1) {
+      log('Saved pairing password no longer works');
+      if (p.pasted) throw new Error('The pairing password did not work. Make sure it is the 32-hex key this scooter is paired with (the one SHU uses). Open "Pairing & log" to paste it again.');
+      // A password we set ourselves no longer authenticates: SHU (or the Segway app)
+      // re-paired with the scooter since and replaced it. Drop it and re-pair by button.
+      saveProf(name, {pwd: null});
+      throw new Error('Another app (SHU) paired with the scooter after this one, so the stored key changed. Tap Connect and press the power button once to pair this phone again.');
     }
-    if (!a || a.idx !== 1) throw new Error('The scooter rejected that pairing password. Check you copied the right one.');
   } else {
     // No saved password: button pairing. This works only on a scooter that has
     // NEVER been paired with another app.
@@ -442,7 +446,7 @@ async function handshake(name){
     }
     if (!a || a.idx !== 1) throw new Error('The scooter rejected this phone. Tap Connect and press the power button when asked.');
   }
-  saveProf(name, {pwd: hex(pwd)}); store.set('last', name);
+  saveProf(name, {pwd: hex(pwd), pasted: false}); store.set('last', name);
   showPwd(name);
   log('Authenticated');
 }
@@ -618,7 +622,7 @@ $('btnSave').addEventListener('click', () => {
   let b = /^[0-9a-f\s:]+$/i.test(raw) ? unhex(raw) : ascii(raw);
   if (b.length !== 16) { $('pwdMsg').innerHTML = '<span class="bad">A pairing password is 16 bytes: 32 hex characters.</span>'; return; }
   if (!n) { $('pwdMsg').innerHTML = '<span class="bad">Enter the scooter\'s Bluetooth name first.</span>'; return; }
-  saveProf(n, {pwd: hex(b)}); store.set('last', n); $('inPwd').value = ''; $('pwdMsg').innerHTML = `<span class="ok">Saved for ${n}.</span>`;
+  saveProf(n, {pwd: hex(b), pasted: true}); store.set('last', n); $('inPwd').value = ''; $('pwdMsg').innerHTML = `<span class="ok">Saved for ${n}.</span>`;
 });
 $('btnCopyPwd').addEventListener('click', async () => {
   const p = prof(curName()).pwd; if (!p) { $('pwdMsg').textContent = 'No password saved yet.'; return; }
