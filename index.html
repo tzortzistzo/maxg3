@@ -286,6 +286,16 @@ function request(target, cmd, idx, payload, expect, timeout = 3000, matchIdx = n
   });
   const p = chain.then(run, run); chain = p.catch(() => {}); return p;
 }
+// Listen for a reply without sending anything, so the second frame of a two-frame
+// answer (the SET_PWD "approved" that follows "pending") is not missed in the gap
+// between requests.
+function listen(expect, timeout, matchIdx = null){
+  const run = () => new Promise(res => {
+    const t = setTimeout(() => { pending = null; res(null); }, timeout);
+    pending = {expect, matchIdx, src: null, res: f => { clearTimeout(t); pending = null; res(f); }};
+  });
+  const p = chain.then(run, run); chain = p.catch(() => {}); return p;
+}
 async function read(target, idx, len){ const f = await request(target, C_READ, idx, Uint8Array.of(len), C_RRESP, 2500, idx); return f.data.slice(0, len); }
 
 function onNotify(e){
@@ -424,17 +434,25 @@ async function setPassword(name, authP, stored, have){
   // pairing request waits.
   const ticker = setInterval(() => { $('pressT').textContent = Math.max(0, Math.ceil((until - Date.now()) / 1000)) + ' s'; }, 1000);
   $('pressT').textContent = Math.ceil((until - Date.now()) / 1000) + ' s';
+  let sawPending = false;
   try {
     while (Date.now() < until) {
       if (!dev.gatt.connected) throw new Error('The scooter closed the connection during pairing. Turn it off and on, then tap Connect again.');
-      try {
-        // Wait specifically for the "accepted" frame (idx 1); the "pending" frame
-        // (idx 0) does not match, so it no longer ends the wait early.
-        const r = await request(board, C_PWD, 0, pwd, C_PWD, 2000, 1);
-        if (r && r.idx === 1) { log('Pairing approved on the scooter'); return pwd; }
-      } catch (e) { /* not accepted yet: keep asking while the button is pressed */ }
+      let r;
+      try { r = await request(board, C_PWD, 0, pwd, C_PWD, 2500); }
+      catch (e) { continue; } // no reply this round, resend
+      if (r && r.idx === 1) { log('Pairing approved on the scooter'); return pwd; }
+      if (r && r.idx === 0) {
+        // "Pending": the scooter got the request and is waiting for the button.
+        // The "approved" frame comes right after, so listen for it without
+        // resending (resending would restart the exchange and lose it).
+        if (!sawPending) { sawPending = true; $('pressT').textContent = 'press the button now'; }
+        const ok = await listen(C_PWD, 5000, 1);
+        if (ok && ok.idx === 1) { log('Pairing approved on the scooter'); return pwd; }
+      }
     }
   } finally { clearInterval(ticker); $('bnPress').hidden = true; }
+  if (!sawPending) throw new Error('The scooter never answered the pairing request. Another app is probably still holding it: switch the scooter off and on, force-close the Segway app, SHU and Bluefy, then open only Bluefy and try again.');
   log('No confirmation yet; will try the pairing we sent');
   return pwd;
 }
