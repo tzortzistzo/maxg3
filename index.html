@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#111416">
+<title>G3 Battery</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* VOICE: a calm, precise instrument — the scooter's own dash, but readable at a glance.
+   IDEA: the G3's TFT cluster: a dark glass panel with one big number and a battery bar.
+   PICTURE: a large battery cell drawn in SVG, filling to the charge, a tick at the charge limit.
+   COLOUR and TYPE: graphite glass, paper-white page, one charge green; amber only for the limit tick. Barlow Condensed numerals, Barlow text.
+   LAYOUT: one column on the phone — cluster, limit, details, pairing, log; two columns from 900px. */
+:root{color-scheme:light dark;
+  --bg:light-dark(#eef0ee,#0b0d0e);--card:light-dark(#ffffff,#161a1c);--ink:light-dark(#121517,#e9ecea);
+  --mute:light-dark(#5d6568,#9aa3a6);--line:light-dark(#dde1df,#262c2f);
+  --glass:#111416;--glass2:#1b2023;--gink:#eef2f0;--gmute:#8e989b;
+  --go:#1fcf7f;--go2:#0f9f5e;--warn:#f2a531;--bad:#e5484d}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 Barlow,system-ui,sans-serif;overflow-x:clip;
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+.wrap{max-width:1080px;margin:0 auto;padding:14px max(4vw,14px) 40px}
+header{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 0 14px}
+h1{white-space:nowrap;flex:1 0 auto!important;font:700 clamp(24px,7vw,30px)/1.05 "Barlow Condensed",sans-serif;margin:0;letter-spacing:.2px;flex:1}
+h2{font:600 22px/1.1 "Barlow Condensed",sans-serif;margin:0 0 10px}
+.pill{font-size:13px;padding:5px 10px;border-radius:99px;background:var(--card);border:1px solid var(--line);color:var(--mute);display:inline-flex;gap:6px;align-items:center;white-space:nowrap}
+.pill i{width:8px;height:8px;border-radius:50%;background:var(--mute)}
+.pill.on i{background:var(--go)}.pill.busy i{background:var(--warn);animation:bl 1s infinite}.pill.err i{background:var(--bad)}
+@keyframes bl{50%{opacity:.25}}
+button{font:600 16px Barlow,sans-serif;min-height:44px;padding:0 18px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
+button:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(--go);outline-offset:2px}
+button.pri{background:var(--go2);border-color:var(--go2);color:#fff}
+button:disabled{opacity:.45;cursor:default}
+.grid{display:grid;gap:14px;align-items:start;grid-template-columns:minmax(0,1fr)}
+@media(min-width:900px){.grid{grid-template-columns:minmax(0,1.25fr) minmax(0,1fr)}.span{grid-column:1/-1}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px}
+/* cluster */
+.cluster{background:radial-gradient(120% 90% at 20% 0%,#20272a 0,var(--glass) 60%);color:var(--gink);border:1px solid #23292c;border-radius:22px;padding:20px 20px 18px;position:relative;overflow:hidden}
+.cluster::after{content:"";position:absolute;inset:0;background:linear-gradient(160deg,rgba(255,255,255,.07),transparent 40%);pointer-events:none}
+.big{display:flex;align-items:baseline;gap:6px}
+.pct{font:700 clamp(84px,24vw,128px)/.9 "Barlow Condensed",sans-serif;font-variant-numeric:tabular-nums}
+.pct small{font-size:.4em;color:var(--gmute);margin-left:2px}
+.state{font:600 20px/1.2 "Barlow Condensed",sans-serif;margin-top:6px;color:var(--gink)}
+.sub{color:var(--gmute);font-size:15px;margin-top:2px}
+.fig{position:relative;height:118px;margin:16px 0 6px}
+.fig svg{position:absolute;inset:0;width:100%;height:100%}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.chip{background:var(--glass2);border:1px solid #2a3134;border-radius:12px;padding:8px 12px;min-width:0}
+.chip b{display:block;font:600 22px/1.1 "Barlow Condensed",sans-serif;white-space:nowrap;font-variant-numeric:tabular-nums}
+.chip span{font-size:13px;color:var(--gmute)}
+.bolt{display:inline-block;color:var(--go);animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.35}}
+@media(prefers-reduced-motion:reduce){.bolt,.pill.busy i,#flow{animation:none!important}}
+/* limit */
+.seg{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;margin:6px 0 12px}
+.seg button{padding:0;font:600 19px "Barlow Condensed",sans-serif}
+.seg button[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.seg button.cur{box-shadow:inset 0 -3px 0 var(--warn)}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.note{font-size:14px;color:var(--mute)}
+.set{padding:10px 0 12px;border-bottom:1px solid var(--line)}.set:last-child{border:0}
+.set h3{font:600 17px/1.2 Barlow,sans-serif;margin:0 0 6px;display:flex;justify-content:space-between;gap:8px}
+.set h3 span{font-weight:500;font-size:14px;color:var(--mute);white-space:nowrap}
+.opts{display:flex;gap:6px;flex-wrap:wrap}.opts button{flex:1 1 0;padding:4px 8px;line-height:1.15}
+.opts button[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.rng{display:flex;gap:12px;align-items:center}.rng input{flex:1;accent-color:var(--go2);min-height:44px;padding:0;border:0;background:none}
+.rng b{font:600 20px "Barlow Condensed",sans-serif;min-width:4.2em;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.ok{color:var(--go2)}.bad{color:var(--bad)}
+/* stats */
+dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px 16px;margin:0}
+dl div{padding:9px 0;border-bottom:1px solid var(--line)}
+dt{font-size:13px;color:var(--mute)}
+dd{margin:0;font:600 22px/1.15 "Barlow Condensed",sans-serif;font-variant-numeric:tabular-nums;white-space:nowrap}
+details{border-top:1px solid var(--line);padding:4px 0}
+summary{cursor:pointer;min-height:44px;display:flex;align-items:center;font-weight:600}
+label{display:block;font-size:14px;color:var(--mute);margin:10px 0 4px}
+input{font:16px Barlow,sans-serif;width:100%;min-height:44px;padding:0 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+code{font:13px ui-monospace,Menlo,monospace;overflow-wrap:anywhere}
+pre{font:12px/1.45 ui-monospace,Menlo,monospace;max-height:260px;overflow:auto;background:var(--bg);border-radius:10px;padding:10px;margin:8px 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.banner{border-radius:14px;padding:12px 14px;margin-bottom:14px;background:light-dark(#fff6e6,#2a2110);border:1px solid light-dark(#f2d39b,#5a4417);font-size:15px}
+.banner[hidden]{display:none}
+.press{background:var(--warn);color:#1b1300;border:0;font-weight:600}
+ol{padding-left:20px;margin:6px 0}li{margin:4px 0}
+footer{font-size:13px;color:var(--mute);margin-top:22px}
+a{color:inherit}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>G3 Battery</h1>
+  <span class="pill" id="pill"><i></i><span id="pillT">Not connected</span></span>
+  <button class="pri" id="btnConn">Connect</button>
+</header>
+
+<div class="banner" id="bnNoBle" hidden>
+  This browser can't use Bluetooth. On iPhone, open this page in the free <b>Bluefy</b> browser from the App Store (Safari can't reach Bluetooth devices). <button id="btnDemo" style="margin-top:8px">Preview with sample data</button>
+</div>
+<div class="banner press" id="bnPress" hidden>Press the scooter's power button once to approve this phone. Waiting… <span id="pressT"></span></div>
+<div class="banner" id="bnErr" hidden></div>
+
+<div class="grid">
+  <section class="cluster" aria-label="Battery">
+    <div class="big"><span class="pct" id="pct">--<small>%</small></span></div>
+    <div class="state" id="state">Connect to your Max G3</div>
+    <div class="sub" id="sub">Switch the scooter on, close the Segway app and SHU, then tap Connect.</div>
+    <div class="fig"><svg id="batt" role="img" aria-label="Battery level"></svg></div>
+    <div class="chips">
+      <div class="chip"><b id="cTtf">--</b><span>Time to full</span></div>
+      <div class="chip"><b id="cPow">--</b><span>Charge power</span></div>
+      <div class="chip"><b id="cLim">--</b><span>Charge limit</span></div>
+    </div>
+  </section>
+
+  <section class="card" aria-labelledby="hLim">
+    <h2 id="hLim">Charge limit</h2>
+    <p class="note" style="margin:0 0 6px">Stop charging early to slow battery wear. 80–90% suits daily riding; set 100% before a long trip.</p>
+    <div class="seg" id="seg"></div>
+    <div class="row"><button class="pri" id="btnLim" disabled>Set limit</button><span class="note" id="limMsg">Connect to read the current limit.</span></div>
+  </section>
+
+  <section class="card" aria-labelledby="hInfo">
+    <h2 id="hInfo">Scooter info</h2>
+    <dl id="stats"></dl>
+    <p class="note" id="statNote" style="margin:10px 0 0"></p>
+  </section>
+
+  <section class="card" aria-labelledby="hSets">
+    <h2 id="hSets">Settings</h2>
+    <div id="sets"></div>
+    <p class="note" id="setNote" style="margin:10px 0 0">Connect to read your settings. Each change is sent the way the Segway app sends it, then read back to confirm.</p>
+  </section>
+
+  <section class="card" aria-labelledby="hSet">
+    <h2 id="hSet">Pairing &amp; help</h2>
+    <details>
+      <summary>First connection</summary>
+      <ol class="note">
+        <li>Open this page in <b>Bluefy</b>.</li>
+        <li>Switch the G3 on (or plug in the charger). Fully close the Segway app and Scooter Hacking Utility, because only one app can hold the connection.</li>
+        <li>Tap <b>Connect</b> and pick your scooter from the list.</li>
+        <li>When the orange bar appears, press the power button once. This phone is then remembered.</li>
+      </ol>
+      <p class="note">If the scooter won't accept the button press, it's still bound to another app's password. Paste that password below (from SHU, or the Segway app's <code>&lt;SERIAL&gt;_decrypt</code> value in an iPhone backup).</p>
+    </details>
+    <details>
+      <summary>Pairing password</summary>
+      <label for="inName">Scooter Bluetooth name (leave blank to use what it advertises)</label>
+      <input id="inName" autocomplete="off" autocapitalize="characters" spellcheck="false">
+      <label for="inPwd">Pairing password (32 hex characters)</label>
+      <input id="inPwd" autocomplete="off" spellcheck="false" placeholder="Leave blank to pair with the button">
+      <div class="row" style="margin-top:10px">
+        <button id="btnSave">Save</button><button id="btnCopyPwd">Copy password</button><button id="btnForget">Forget scooter</button>
+      </div>
+      <p class="note" id="pwdMsg"></p>
+    </details>
+    <details>
+      <summary>Connection log</summary>
+      <pre id="log" aria-live="off"></pre>
+      <button id="btnCopyLog">Copy log</button>
+    </details>
+  </section>
+</div>
+
+<footer>Unofficial. Not made by or affiliated with Segway-Ninebot. Reads the battery over the scooter's encrypted Bluetooth protocol, which the community documented (segway-ninebot-ble, ha-ninebot). It only changes settings that were checked on a real Max G3 against the official app, using the same commands. It never touches region, speed limits, serial number or firmware. Works in Bluefy on iPhone and in Chrome on Android or desktop.</footer>
+</div>
+
+<script>
+/* ---- G3 core: AES-128, Encryption2 framing, crypto session ---- */
+const NB = (() => {
+  // --- AES-128 (encrypt only) ---
+  const SBOX = new Uint8Array(256);
+  (() => {
+    let p = 1, q = 1;
+    do {
+      p = p ^ ((p << 1) & 0xff) ^ (p & 0x80 ? 0x1b : 0);
+      q ^= q << 1; q ^= q << 2; q ^= q << 4; q &= 0xff;
+      if (q & 0x80) q ^= 0x09;
+      const x = q ^ ((q << 1 | q >> 7) & 0xff) ^ ((q << 2 | q >> 6) & 0xff) ^ ((q << 3 | q >> 5) & 0xff) ^ ((q << 4 | q >> 4) & 0xff);
+      SBOX[p] = (x ^ 0x63) & 0xff;
+    } while (p !== 1);
+    SBOX[0] = 0x63;
+  })();
+  const xt = b => ((b << 1) ^ (b & 0x80 ? 0x1b : 0)) & 0xff;
+  function expandKey(key) {
+    const w = new Uint8Array(176); w.set(key);
+    let rcon = 1;
+    for (let i = 16; i < 176; i += 4) {
+      let t = w.slice(i - 4, i);
+      if (i % 16 === 0) {
+        t = [SBOX[t[1]] ^ rcon, SBOX[t[2]], SBOX[t[3]], SBOX[t[0]]];
+        rcon = xt(rcon);
+      }
+      for (let j = 0; j < 4; j++) w[i + j] = w[i - 16 + j] ^ t[j];
+    }
+    return w;
+  }
+  function aesBlock(w, input) {
+    const s = Uint8Array.from(input.slice(0, 16));
+    for (let i = 0; i < 16; i++) s[i] ^= w[i];
+    for (let r = 1; r <= 10; r++) {
+      for (let i = 0; i < 16; i++) s[i] = SBOX[s[i]];
+      // shift rows (column-major state)
+      let t = s[1]; s[1] = s[5]; s[5] = s[9]; s[9] = s[13]; s[13] = t;
+      t = s[2]; s[2] = s[10]; s[10] = t; t = s[6]; s[6] = s[14]; s[14] = t;
+      t = s[15]; s[15] = s[11]; s[11] = s[7]; s[7] = s[3]; s[3] = t;
+      if (r < 10) for (let c = 0; c < 16; c += 4) {
+        const a0 = s[c], a1 = s[c + 1], a2 = s[c + 2], a3 = s[c + 3], x = a0 ^ a1 ^ a2 ^ a3;
+        s[c] ^= x ^ xt(a0 ^ a1); s[c + 1] ^= x ^ xt(a1 ^ a2);
+        s[c + 2] ^= x ^ xt(a2 ^ a3); s[c + 3] ^= x ^ xt(a3 ^ a0);
+      }
+      for (let i = 0; i < 16; i++) s[i] ^= w[r * 16 + i];
+    }
+    return s;
+  }
+
+  // --- helpers ---
+  const FW_DATA = Uint8Array.from([0x97,0xCF,0xB8,0x02,0x84,0x41,0x43,0xDE,0x56,0x00,0x2B,0x3B,0x34,0x78,0x0A,0x5D]);
+  const pad16 = b => { const o = new Uint8Array(16); if (b) o.set(b.slice(0, 16)); return o; };
+  const cat = (...a) => { const o = new Uint8Array(a.reduce((n, x) => n + x.length, 0)); let i = 0; for (const x of a) { o.set(x, i); i += x.length; } return o; };
+  const xor = (a, b) => a.map((v, i) => v ^ b[i]);
+  const hex = b => Array.from(b, x => x.toString(16).padStart(2, '0')).join('').toUpperCase();
+  const unhex = s => Uint8Array.from((s.replace(/[^0-9a-f]/gi, '').match(/../g) || []).map(h => parseInt(h, 16)));
+  const ascii = s => new TextEncoder().encode(s);
+
+  async function deriveKey(k1, k2) {
+    const d = await crypto.subtle.digest('SHA-1', cat(pad16(k1), pad16(k2)));
+    return new Uint8Array(d).slice(0, 16);
+  }
+
+  // --- Encryption2 session ---
+  class Session {
+    constructor(gen2) {
+      this.ecbIn = gen2 ? FW_DATA : new Uint8Array(16);
+      this.auth = new Uint8Array(16);
+      this.counter = 0; this.sn = false; this.lastRx = -1; this.w = null;
+    }
+    async setKey(k1, k2) { this.w = expandKey(await deriveKey(k1, k2)); }
+    setAuth(a) { this.auth = Uint8Array.from(a); }
+    startSN() { this.counter = 1; this.sn = true; }
+    nonce(c) { return cat(Uint8Array.from([c >>> 24 & 255, c >>> 16 & 255, c >>> 8 & 255, c & 255]), pad16(this.auth).slice(0, 8), Uint8Array.of(0)); }
+    ks(nonce, i) { return aesBlock(this.w, cat(Uint8Array.of(1), nonce, Uint8Array.of(0, i & 255))); }
+    mac(plain, nonce) {
+      const p = plain.slice(3);
+      let x = aesBlock(this.w, cat(Uint8Array.of(0x59), nonce, Uint8Array.of(0, p.length & 255)));
+      x = aesBlock(this.w, xor(x, pad16(plain.slice(0, 3))));
+      for (let o = 0; o < p.length; o += 16) x = aesBlock(this.w, xor(x, pad16(p.slice(o, o + 16))));
+      return x.slice(0, 4);
+    }
+    ctr(payload, nonce) {
+      const out = new Uint8Array(payload.length);
+      for (let o = 0, i = 1; o < payload.length; o += 16, i++) {
+        const k = this.ks(nonce, i);
+        for (let j = 0; j < 16 && o + j < payload.length; j++) out[o + j] = payload[o + j] ^ k[j];
+      }
+      return out;
+    }
+    staticXor(payload) {
+      const k = aesBlock(this.w, this.ecbIn);
+      return payload.map((v, i) => v ^ k[i % 16]);
+    }
+    encrypt(plain) {
+      const p = plain.slice(3);
+      if (!this.sn) {
+        let sum = 0; for (const b of p) sum += b;
+        const ck = ~sum & 0xffff;
+        return cat(plain.slice(0, 3), this.staticXor(p), Uint8Array.of(0, 0, ck & 255, ck >> 8, 0, 0));
+      }
+      const c = ++this.counter, n = this.nonce(c);
+      const tag = xor(this.mac(plain, n), this.ks(n, 0).slice(0, 4));
+      return cat(plain.slice(0, 3), this.ctr(p, n), tag, Uint8Array.of(c >> 8 & 255, c & 255));
+    }
+    decrypt(data) { // -> plaintext or null
+      if (data.length < 9) return null;
+      const c = data[data.length - 2] << 8 | data[data.length - 1];
+      const head = data.slice(0, 3), body = data.slice(3, -6), tag = data.slice(-6, -2);
+      if (c === 0) return cat(head, this.staticXor(body));
+      if (c <= this.lastRx) return null;
+      const n = this.nonce(c), plain = cat(head, this.ctr(body, n));
+      const want = xor(tag, this.ks(n, 0).slice(0, 4));
+      const got = this.mac(plain, n);
+      if (want.some((v, i) => v !== got[i])) return null;
+      this.lastRx = c;
+      return plain;
+    }
+  }
+
+  const frame = (sync2, target, cmd, idx, payload = new Uint8Array(0)) =>
+    cat(Uint8Array.of(0x5A, sync2, payload.length, 0x3E, target, cmd, idx), payload);
+  const parse = p => (p.length < 7 || p[0] !== 0x5A) ? null :
+    { src: p[3], cmd: p[5], idx: p[6], data: p.slice(7, 7 + p[2]) };
+
+  return { Session, frame, parse, hex, unhex, ascii, cat, deriveKey, aesBlock, expandKey, FW_DATA };
+})();
+
+</script>
+<script>
+{
+const $ = id => document.getElementById(id);
+const {Session, frame, parse, hex, unhex, ascii} = NB;
+
+const SVC_NB = '6e400001-0000-0000-006e-696e65626f74';
+const SVC_NORDIC = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+const W_NB = '6e400002-0000-0000-006e-696e65626f74';
+const W_NORDIC = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+const GENS = [{id:'gen3', sync:0xB5, gen2:false, write:W_NB}, {id:'gen2', sync:0xA5, gen2:true, write:W_NORDIC}];
+const VCU = 0x16, BMS_CAND = [0x07, 0x22, 0x23];
+const C_READ = 0x01, C_WRITE = 0x02, C_WRITE_NR = 0x03, C_RRESP = 0x04, C_WRESP = 0x05, C_PRE = 0x5B, C_PWD = 0x5C, C_AUTH = 0x5D;
+const LIMITS = [80, 85, 90, 95, 100];
+
+// ---------- state ----------
+let dev = null, sess = null, sync2 = 0xB5, writeChar = null, withResp = false, board = 0x04;
+let writeChars = {}, rx = [], pending = null, chain = Promise.resolve(), recentTx = [];
+let bms = null, running = false, demo = false, undecryptable = 0, tick = 0;
+let D = {}; let curEma = null; let pickLimit = null;
+
+// ---------- storage ----------
+const store = {
+  get(k){ try { return JSON.parse(localStorage.getItem('g3:'+k)) } catch { return null } },
+  set(k,v){ try { localStorage.setItem('g3:'+k, JSON.stringify(v)) } catch {} },
+  del(k){ try { localStorage.removeItem('g3:'+k) } catch {} }
+};
+const prof = n => store.get('p:'+n) || {};
+const saveProf = (n, p) => store.set('p:'+n, {...prof(n), ...p});
+
+// ---------- log ----------
+const lines = [];
+const esc = t => String(t).replace(/[&<>"']/g, c => '&#' + c.charCodeAt(0) + ';');
+function log(m){ const t = new Date().toTimeString().slice(0,8); lines.push(t+'  '+m); if (lines.length > 400) lines.shift(); $('log').textContent = lines.join('\n'); }
+
+// ---------- UI helpers ----------
+function pill(cls, t){ $('pill').className = 'pill ' + cls; $('pillT').textContent = t; }
+function err(m){ const b = $('bnErr'); if (!m) { b.hidden = true; return; } b.textContent = m; b.hidden = false; }
+const fmtMin = m => m == null ? '--' : m < 1 ? 'Full' : m < 60 ? Math.round(m) + ' min' : Math.floor(m/60) + ' h ' + String(Math.round(m%60)).padStart(2,'0');
+
+// ---------- transport ----------
+async function send(plain){
+  const data = sess.encrypt(plain);
+  recentTx = [...recentTx.slice(-3), hex(data)];
+  log('TX ' + (plain[5] === C_PWD ? hex(plain.slice(0,7)) + '<password>' : hex(plain)));
+  const c = writeChar;
+  if (withResp && c.writeValueWithResponse) await c.writeValueWithResponse(data);
+  else if (!withResp && c.writeValueWithoutResponse) await c.writeValueWithoutResponse(data);
+  else await c.writeValue(data);
+}
+function request(target, cmd, idx, payload, expect, timeout = 3000, matchIdx = null){
+  const run = () => new Promise((res, rej) => {
+    const t = setTimeout(() => { pending = null; rej(new Error(`No reply to 0x${cmd.toString(16)} @0x${idx.toString(16)}`)); }, timeout);
+    pending = {expect, matchIdx, src: cmd === C_READ || cmd === C_WRITE ? target : null, res: f => { clearTimeout(t); pending = null; res(f); }};
+    send(frame(sync2, target, cmd, idx, payload)).then(() => { if (expect == null) { clearTimeout(t); pending = null; setTimeout(() => res(null), 250); } }, e => { clearTimeout(t); pending = null; rej(e); });
+  });
+  const p = chain.then(run, run); chain = p.catch(() => {}); return p;
+}
+async function read(target, idx, len){ const f = await request(target, C_READ, idx, Uint8Array.of(len), C_RRESP, 2500, idx); return f.data.slice(0, len); }
+
+function onNotify(e){
+  const v = new Uint8Array(e.target.value.buffer.slice(e.target.value.byteOffset, e.target.value.byteOffset + e.target.value.byteLength));
+  rx.push(...v);
+  for (;;) {
+    let s = -1;
+    for (let i = 0; i + 1 < rx.length; i++) if (rx[i] === 0x5A && (rx[i+1] === 0xA5 || rx[i+1] === 0xB5)) { s = i; break; }
+    if (s < 0) { rx = rx.slice(-1); return; }
+    if (s) rx = rx.slice(s);
+    if (rx.length < 3) return;
+    const total = rx[2] + 13;
+    if (rx.length < total) return;
+    const raw = Uint8Array.from(rx.slice(0, total)); rx = rx.slice(total);
+    if (recentTx.includes(hex(raw))) continue; // echo of our own frame
+    if (!sess) continue;
+    const plain = sess.decrypt(raw);
+    if (!plain) { undecryptable++; log('RX (could not decrypt) ' + hex(raw)); continue; }
+    const f = parse(plain); if (!f) continue;
+    log('RX ' + hex(plain));
+    if (pending && f.cmd === pending.expect && (pending.matchIdx == null || f.idx === pending.matchIdx) && (pending.src == null || f.src === pending.src)) pending.res(f);
+  }
+}
+
+// ---------- connect + handshake ----------
+async function connect(){
+  err(null);
+  if (!navigator.bluetooth) { $('bnNoBle').hidden = false; return; }
+  stopDemo();
+  try {
+    pill('busy', 'Choose scooter');
+    dev = await navigator.bluetooth.requestDevice({acceptAllDevices: true, optionalServices: [SVC_NB, SVC_NORDIC]});
+    dev.addEventListener('gattserverdisconnected', onDisc);
+    await openLink();
+  } catch (e) {
+    log('Error: ' + e.message); running = false;
+    pill('err', 'Not connected');
+    if (e.name === 'NotFoundError') { pill('', 'Not connected'); return; }
+    if (e.name === 'SecurityError') return err('Bluetooth is blocked inside this frame. Open the page directly in Bluefy instead of inside another app.');
+    err(e.message);
+    try { dev && dev.gatt.disconnect(); } catch {}
+  } finally { $('bnPress').hidden = true; }
+}
+
+async function openLink(){
+  pill('busy', 'Connecting');
+  const server = await dev.gatt.connect();
+  log('Connected to ' + (dev.name || dev.id));
+  writeChars = {}; rx = [];
+  for (const su of [SVC_NB, SVC_NORDIC]) {
+    let svc; try { svc = await server.getPrimaryService(su); } catch { continue; }
+    for (const ch of await svc.getCharacteristics()) {
+      const p = ch.properties;
+      if (p.notify || p.indicate) { try { await ch.startNotifications(); ch.addEventListener('characteristicvaluechanged', onNotify); log('Listening ' + ch.uuid.slice(0,8)); } catch (e) { log('No notify on ' + ch.uuid.slice(0,8)); } }
+      if (p.write || p.writeWithoutResponse) writeChars[ch.uuid.toLowerCase()] = ch;
+    }
+  }
+  if (!Object.keys(writeChars).length) throw new Error('This device does not look like a Ninebot scooter (no Ninebot or UART service).');
+  await sleep(250); rx = [];
+  const name = ($('inName').value.trim() || dev.name || '').trim();
+  if (!name) throw new Error('The scooter did not report its Bluetooth name. Enter it under Pairing password, then connect again.');
+  await handshake(name);
+  await findBms(name);
+  pill('on', 'Connected'); running = true; $('btnLim').disabled = false;
+  poll();
+}
+
+async function handshake(name){
+  const p = prof(name);
+  pill('busy', 'Handshake');
+  // Phase 1: PRE_COMM, try each generation / board / write mode until the scooter answers
+  let resp = null;
+  const tries = [];
+  for (const g of GENS) for (const wr of [false, true]) for (const b of [0x04, 0x21]) tries.push({g, wr, b});
+  if (p.gen) tries.sort((a, z) => (z.g.id === p.gen && z.b === p.board && z.wr === p.wr) - (a.g.id === p.gen && a.b === p.board && a.wr === p.wr));
+  for (const t of tries) {
+    if (!writeChars[t.g.write]) continue;
+    sync2 = t.g.sync; writeChar = writeChars[t.g.write]; withResp = t.wr; board = t.b;
+    sess = new Session(t.g.gen2);
+    await sess.setKey(ascii(name), t.g.gen2 ? NB.FW_DATA : null);
+    log(`PRE_COMM try ${t.g.id} board 0x${t.b.toString(16)} ${t.wr ? 'with' : 'without'} response`);
+    try { resp = await request(board, C_PRE, 0, new Uint8Array(0), C_PRE, 2500); } catch { continue; }
+    saveProf(name, {gen: t.g.id, board: t.b, wr: t.wr}); break;
+  }
+  if (!resp) throw new Error('The scooter did not answer. Make sure it is switched on and that the Segway app and SHU are fully closed, then try again.');
+  if (resp.data.length < 30) throw new Error('Unexpected handshake reply from the scooter.');
+  const authP = resp.data.slice(0, 16);
+  const serial = new TextDecoder().decode(resp.data.slice(16, 30)).replace(/\0/g, '');
+  const stored = resp.idx !== 0;
+  log(`Serial ${serial}, scooter already has a paired app: ${stored}`);
+  D.serial = serial;
+  sess.setAuth(authP); sess.startSN(); rx = [];
+
+  let pwd = p.pwd ? unhex(p.pwd) : null;
+  // Phase 2: SET_PWD (button approval) unless we already hold a password
+  if (!(pwd && stored)) pwd = await setPassword(name, authP, stored, pwd);
+  // Phase 3: AUTH
+  const payload = new Uint8Array(14); payload.set(ascii(serial).slice(0, 14));
+  await sess.setKey(pwd, authP);
+  let a;
+  try { a = await request(board, C_AUTH, 0, payload, C_AUTH, 4000); }
+  catch {
+    log('AUTH unanswered, re-asserting password');
+    try { await request(board, C_PWD, 0, pwd, C_PWD, 8000); } catch {}
+    await sess.setKey(pwd, authP);
+    try { a = await request(board, C_AUTH, 0, payload, C_AUTH, 4000); }
+    catch { throw new Error('The scooter did not accept the pairing password. If you pasted one, check it; otherwise tap Forget scooter and connect again to re-pair with the button.'); }
+  }
+  if (a.idx !== 1) { saveProf(name, {pwd: null}); throw new Error('The scooter rejected this phone. Connect again and press the power button when asked.'); }
+  saveProf(name, {pwd: hex(pwd)}); store.set('last', name);
+  showPwd(name);
+  log('Authenticated');
+}
+
+async function setPassword(name, authP, stored, have){
+  await sess.setKey(ascii(name), authP);
+  const pwd = have || crypto.getRandomValues(new Uint8Array(16));
+  const until = Date.now() + 90000; undecryptable = 0;
+  $('bnPress').hidden = false; pill('busy', 'Waiting for button');
+  try {
+    while (Date.now() < until) {
+      $('pressT').textContent = Math.ceil((until - Date.now()) / 1000) + ' s';
+      if (!dev.gatt.connected) throw new Error('The scooter closed the connection while pairing. It may still be bound to another app.');
+      try {
+        const r = await request(board, C_PWD, 0, pwd, C_PWD, 2500);
+        if (r.idx === 1) { log('Pairing approved on the scooter'); return pwd; }
+      } catch (e) {
+        if (undecryptable) throw new Error('The scooter is still bound to another app and answered with its key. Paste that app\'s pairing password under Pairing password, or unlink the scooter in the Segway app first.');
+      }
+      await sleep(1500);
+    }
+  } finally { $('bnPress').hidden = true; }
+  // Some models never confirm: try to authenticate anyway
+  log('No button confirmation; trying to authenticate anyway');
+  return pwd;
+}
+
+async function findBms(name){
+  const p = prof(name);
+  const order = p.bms ? [p.bms, ...BMS_CAND.filter(b => b !== p.bms)] : BMS_CAND;
+  for (const b of order) {
+    try { const v = await read(b, 0x8C, 2); if (v.length === 2 && (v[0] || v[1])) { bms = b; saveProf(name, {bms: b}); log('Battery board at 0x' + b.toString(16)); return; } } catch {}
+  }
+  bms = null; log('No battery board answered; showing vehicle data only');
+}
+
+function onDisc(){
+  running = false; pending = null; $('btnLim').disabled = true;
+  log('Disconnected'); pill('err', 'Disconnected');
+  $('btnConn').textContent = 'Reconnect';
+}
+
+// ---------- polling ----------
+const u16 = d => d.length >= 2 ? d[0] | d[1] << 8 : null;
+const u32 = d => d.length >= 4 ? (d[0] | d[1] << 8 | d[2] << 16) + d[3] * 16777216 : null;
+const s16 = d => { const v = u16(d); return v == null ? null : v > 32767 ? v - 65536 : v; };
+async function tryRead(b, idx, len, fn){ try { return fn(await read(b, idx, len)); } catch { return null; } }
+async function poll(){
+  while (running && dev && dev.gatt.connected) {
+    const n = {};
+    n.soc = await tryRead(VCU, 0x55, 2, u16);
+    n.plug = await tryRead(VCU, 0x1F, 2, d => (d[0] >> 6) & 1);
+    n.chg = await tryRead(VCU, 0x1C, 2, d => (d[0] >> 2) & 1);
+    if (bms != null) {
+      n.volt = await tryRead(bms, 0x8C, 2, d => u16(d) / 100);
+      n.amp = await tryRead(bms, 0x8D, 2, d => s16(d) / 100);
+      n.rem = await tryRead(bms, 0x5B, 2, d => u16(d) * 10);
+      n.full = await tryRead(bms, 0x13, 2, d => u16(d) * 10);
+      n.bsoc = await tryRead(bms, 0x8F, 2, u16);
+      n.limit = await tryRead(bms, 0x82, 2, u16);
+    }
+    n.mode = await tryRead(VCU, 0x5A, 2, d => d[0]);
+    if (tick % 5 === 0) {
+      n.odo = await tryRead(VCU, 0x62, 4, d => u32(d) / 10);
+      n.range = await tryRead(VCU, 0x5F, 2, d => u16(d) / 100);
+      n.ctemp = await tryRead(VCU, 0x6B, 2, d => u16(d) / 10);
+      n.awake = await tryRead(VCU, 0x64, 4, u32);
+      n.ride = await tryRead(VCU, 0x66, 4, u32);
+      for (const st of SETS) if (!busy[st.k]) n['s_' + st.k] = await tryRead(VCU, st.idx, 2, u16);
+    }
+    if (!running) break;
+    for (const k in n) if (n[k] != null || !(k in D)) D[k] = n[k];
+    tick++; render();
+    await sleep(2000);
+  }
+}
+
+// ---------- estimates ----------
+function ttf(){
+  if (!D.chg && !(D.plug && D.amp > 0.2)) return null;
+  const soc = D.soc ?? D.bsoc; if (soc == null) return null;
+  const target = D.limit ?? 100;
+  if (soc >= target) return 0;
+  let min;
+  if (curEma > 0.2 && D.full && D.rem != null) {
+    const needMah = Math.max(0, D.full * target / 100 - D.rem);
+    const bulkEnd = Math.min(target, 90);
+    const bulkMah = Math.max(0, D.full * bulkEnd / 100 - D.rem);
+    min = bulkMah / (curEma * 1000) * 60 + Math.max(0, needMah - bulkMah) / (curEma * 500) * 60; // current roughly halves above 90%
+  } else min = (target - soc) / 100 * 210; // rated ~3.5 h for a full charge
+  return min;
+}
+
+// ---------- render ----------
+function drawBatt(){
+  const s = $('batt'), W = s.clientWidth, H = s.clientHeight; if (!W) return;
+  const soc = D.soc ?? D.bsoc, lim = D.limit, pad = 4, nub = 12, bw = W - nub - pad * 2, bh = H - pad * 2, r = 16;
+  const fw = soc == null ? 0 : Math.max(0, Math.min(1, soc / 100)) * (bw - 12);
+  const col = soc == null ? '#3a4245' : soc <= 15 ? 'var(--bad)' : 'var(--go)';
+  const charging = D.chg && soc < (lim ?? 100);
+  let h = `<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".22"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".25"/></linearGradient>
+    <clipPath id="cp"><rect x="${pad+6}" y="${pad+6}" width="${bw-12}" height="${bh-12}" rx="${r-6}"/></clipPath></defs>
+    <rect x="${pad}" y="${pad}" width="${bw}" height="${bh}" rx="${r}" fill="#0a0d0e" stroke="#3b4447" stroke-width="2"/>
+    <rect x="${pad+bw+2}" y="${H/2-bh*.2}" width="${nub-4}" height="${bh*.4}" rx="4" fill="#3b4447"/>
+    <g clip-path="url(#cp)"><rect x="${pad+6}" y="${pad+6}" width="${fw}" height="${bh-12}" fill="${col}"/>
+    <rect x="${pad+6}" y="${pad+6}" width="${fw}" height="${bh-12}" fill="url(#g)"/>`;
+  if (charging) h += `<rect id="flow" x="${pad+6}" y="${pad+6}" width="${Math.min(60, fw)}" height="${bh-12}" fill="#fff" opacity=".18"><animate attributeName="x" from="${pad+6-60}" to="${pad+6+fw}" dur="2.2s" repeatCount="indefinite"/></rect>`;
+  h += `</g>`;
+  for (let i = 1; i < 10; i++) { const x = pad + 6 + (bw - 12) * i / 10; h += `<line x1="${x}" x2="${x}" y1="${pad+6}" y2="${pad+14}" stroke="#000" stroke-opacity=".35"/>`; }
+  if (lim != null && lim < 100) {
+    const x = pad + 6 + (bw - 12) * lim / 100;
+    h += `<line x1="${x}" x2="${x}" y1="${pad+2}" y2="${H-pad-2}" stroke="var(--warn)" stroke-width="3" stroke-dasharray="6 4"/>`;
+  }
+  s.innerHTML = h;
+}
+const ro = new ResizeObserver(drawBatt); ro.observe($('batt'));
+
+function render(){
+  const soc = D.soc ?? D.bsoc;
+  if (D.amp != null) curEma = curEma == null ? D.amp : curEma * 0.7 + D.amp * 0.3;
+  $('pct').innerHTML = (soc == null ? '--' : soc) + '<small>%</small>';
+  const lim = D.limit, t = ttf();
+  let st, sub;
+  if (D.chg) { st = '<svg class="bolt" width="14" height="20" viewBox="0 0 14 20" aria-hidden="true"><path d="M8 0 0 12h6l-2 8 10-12H8z" fill="currentColor"/></svg> Charging'; sub = t != null ? `Full${lim != null && lim < 100 ? ' (to ' + lim + '%)' : ''} in about ${fmtMin(t)}` : 'Charger connected'; }
+  else if (D.plug) { st = 'Charger connected'; sub = lim != null && soc >= lim ? `Holding at the ${lim}% limit` : soc >= 100 ? 'Fully charged' : 'Not drawing current'; }
+  else if (soc != null) { st = 'On battery'; sub = D.volt != null ? `${D.volt.toFixed(1)} V pack` : (D.serial || ''); }
+  else if (running) { st = 'Connected'; sub = 'Reading…'; }
+  else { st = 'Connect to your Max G3'; sub = 'Switch the scooter on, close the Segway app and SHU, then tap Connect.'; }
+  $('state').innerHTML = st; $('sub').textContent = sub;
+  $('cTtf').textContent = D.chg ? fmtMin(t) : '--';
+  const w = D.volt != null && D.amp != null ? D.volt * D.amp : null;
+  $('cPow').textContent = D.chg && w != null && w > 0 ? Math.round(w) + ' W' : '--';
+  $('cLim').textContent = lim != null ? lim + '%' : '--';
+  drawBatt();
+  renderSeg();
+  const hm = sec => sec == null ? '--' : Math.floor(sec / 3600) + ' h ' + String(Math.floor(sec % 3600 / 60)).padStart(2, '0') + ' m';
+  const rows = [
+    ['Total mileage', D.odo != null ? D.odo.toLocaleString('en', {maximumFractionDigits: 1}) + ' km' : '--'],
+    ['Range left', D.range != null ? D.range.toFixed(1) + ' km' : '--'],
+    ['Ride mode', D.mode != null ? (MODES[D.mode] || 'Mode ' + D.mode) : '--'],
+    ['Controller temp', D.ctemp != null ? D.ctemp.toFixed(1) + ' °C' : '--'],
+    ['Riding time', hm(D.ride)],
+    ['Time switched on', hm(D.awake)],
+    ['Charger', D.plug == null ? '--' : D.plug ? 'Plugged in' : 'Unplugged'],
+    ['Serial number', D.serial ? esc(D.serial) : '--'],
+  ];
+  $('stats').innerHTML = rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('');
+  $('statNote').textContent = demo ? 'Sample data. Connect a scooter to see your own.' : '';
+  renderSets();
+}
+
+// ---------- settings ----------
+const MODES = {1: 'Walk', 2: 'Eco', 3: 'Sport', 5: 'Drive'};
+const SETS = [
+  {k: 'regen', label: 'Energy recovery', idx: 0x70, opts: [['Off', 0], ['Low', 1], ['Standard', 2]], hint: 'How hard the motor brakes and recharges when you let go of the throttle.'},
+  {k: 'start', label: 'Start speed', idx: 0x42, opts: [['3 km/h', 3], ['4 km/h', 4], ['5 km/h', 5]], hint: 'Speed you must kick to before the throttle works.'},
+  {k: 'btn', label: 'Custom button', idx: 0x4A, opts: [['Hazard', 6], ['Recovery', 4], ['Boost', 7]], hint: 'What the left handlebar button does: hazard lights, switch energy recovery level, or Boost.'},
+  {k: 'off', label: 'Auto power-off', idx: 0x49, min: 1, max: 30, unit: ' min', hint: 'Switches off after this long without use.'},
+  {k: 'vol', label: 'Sound volume', idx: 0x76, min: 5, max: 100, unit: '%', hint: 'Beeps and chimes.'},
+];
+const busy = {};
+let setsBuilt = false;
+function buildSets(){
+  $('sets').innerHTML = SETS.map(st => `<div class="set" id="set-${st.k}"><h3>${st.label}<span id="sv-${st.k}"></span></h3>` +
+    (st.opts ? `<div class="opts">${st.opts.map(([l, v]) => `<button type="button" data-k="${st.k}" data-v="${v}" aria-pressed="false">${l}</button>`).join('')}</div>`
+             : `<div class="rng"><input type="range" id="r-${st.k}" data-k="${st.k}" min="${st.min}" max="${st.max}" step="1" aria-label="${st.label}"><b id="rv-${st.k}">--</b></div>`) +
+    `<div class="note">${st.hint}</div></div>`).join('');
+  setsBuilt = true;
+}
+function renderSets(){
+  if (!setsBuilt) buildSets();
+  const live = running || demo;
+  for (const st of SETS) {
+    const v = D['s_' + st.k], el = $('set-' + st.k), sv = $('sv-' + st.k);
+    if (busy[st.k]) continue;
+    if (st.opts) {
+      el.querySelectorAll('button').forEach(b => { b.setAttribute('aria-pressed', String(+b.dataset.v === v)); b.disabled = !live || v == null; });
+      sv.textContent = v != null && !st.opts.some(o => o[1] === v) ? 'now ' + v + (st.k === 'start' ? ' km/h' : '') : '';
+    } else {
+      const r = $('r-' + st.k); r.disabled = !live || v == null;
+      if (v != null && document.activeElement !== r) { r.value = v; $('rv-' + st.k).textContent = v + st.unit; }
+    }
+  }
+}
+async function writeSet(st, v){
+  const sv = $('sv-' + st.k); busy[st.k] = true; sv.textContent = 'Saving…';
+  try {
+    if (demo) await sleep(400);
+    else {
+      await request(VCU, C_WRITE_NR, st.idx, Uint8Array.of(v & 255, v >> 8), null, 3000);
+      const back = u16(await read(VCU, st.idx, 2));
+      if (back !== v) throw new Error('kept ' + back);
+    }
+    D['s_' + st.k] = v; busy[st.k] = false; renderSets(); sv.innerHTML = '<span class="ok">Saved</span>';
+  } catch (e) {
+    log(st.label + ' write failed: ' + e.message); busy[st.k] = false; renderSets(); sv.innerHTML = '<span class="bad">Not saved</span>';
+  }
+}
+$('sets').addEventListener('click', e => {
+  const b = e.target.closest('button[data-k]'); if (!b || b.disabled) return;
+  const st = SETS.find(x => x.k === b.dataset.k), v = +b.dataset.v;
+  if (v !== D['s_' + st.k]) writeSet(st, v);
+});
+$('sets').addEventListener('input', e => { const k = e.target.dataset.k; if (k) $('rv-' + k).textContent = e.target.value + SETS.find(x => x.k === k).unit; });
+$('sets').addEventListener('change', e => { const k = e.target.dataset.k; if (!k) return; const st = SETS.find(x => x.k === k), v = +e.target.value; if (v !== D['s_' + k]) writeSet(st, v); });
+
+function renderSeg(){
+  const cur = D.limit;
+  if (pickLimit == null && cur != null) pickLimit = cur;
+  $('seg').innerHTML = LIMITS.map(v => `<button type="button" data-v="${v}" aria-pressed="${v === pickLimit}" class="${v === cur ? 'cur' : ''}">${v}%</button>`).join('');
+  const b = $('btnLim');
+  b.textContent = pickLimit != null && pickLimit !== cur ? `Set to ${pickLimit}%` : 'Set limit';
+  b.disabled = !(running || demo) || pickLimit == null || pickLimit === cur;
+}
+$('seg').addEventListener('click', e => { const v = e.target.closest('button')?.dataset.v; if (!v) return; pickLimit = +v; renderSeg(); });
+
+async function setLimit(){
+  const v = pickLimit; if (v == null) return;
+  const m = $('limMsg'); $('btnLim').disabled = true;
+  if (demo) { D.limit = v; m.innerHTML = `<span class="ok">Limit set to ${v}% (sample).</span>`; render(); return; }
+  if (bms == null) { m.innerHTML = '<span class="bad">The battery board did not answer, so the limit can\'t be changed.</span>'; return; }
+  m.textContent = 'Writing…';
+  try {
+    await request(bms, C_WRITE, 0x82, Uint8Array.of(v & 255, v >> 8), C_WRESP, 3000);
+    const back = u16(await read(bms, 0x82, 2));
+    if (back === v) { D.limit = v; m.innerHTML = `<span class="ok">Done. The scooter will stop charging at ${v}%.</span>`; }
+    else m.innerHTML = `<span class="bad">The scooter kept ${back}%. Your firmware may not allow this value.</span>`;
+  } catch (e) { m.innerHTML = '<span class="bad">No reply from the scooter. Try again.</span>'; log('Limit write failed: ' + e.message); }
+  render();
+}
+$('btnLim').addEventListener('click', setLimit);
+
+// ---------- demo ----------
+let demoT = null;
+function startDemo(){
+  demo = true; running = false; $('bnNoBle').hidden = true; pill('on', 'Sample data');
+  D = {soc: 62, bsoc: 63, plug: 1, chg: 1, volt: 50.8, amp: 3.6, rem: 7450, full: 12100, limit: 90, mode: 5, odo: 1842.6, range: 41.3, ctemp: 27.4, awake: 418320, ride: 251880, s_regen: 2, s_start: 3, s_btn: 6, s_off: 10, s_vol: 60, serial: 'SAMPLE'};
+  curEma = null; pickLimit = null; $('limMsg').textContent = 'Sample scooter: pick a limit and tap Set.'; render();
+  demoT = setInterval(() => {
+    if (D.soc < D.limit) { D.rem += 3.6 * 1000 * 4 / 3600 * 60; D.soc = Math.min(D.limit, Math.round(D.rem / D.full * 100)); D.bsoc = D.soc + 1; D.volt = +(46 + D.soc * 0.078).toFixed(2); }
+    D.chg = D.soc < D.limit ? 1 : 0; D.amp = D.chg ? +(3.5 + Math.random() * .2).toFixed(2) : 0.0;
+    render();
+  }, 4000);
+}
+function stopDemo(){ if (demoT) clearInterval(demoT); demoT = null; if (demo) { demo = false; D = {}; render(); } }
+$('btnDemo').addEventListener('click', startDemo);
+
+// ---------- pairing settings ----------
+function curName(){ return $('inName').value.trim() || (dev && dev.name) || store.get('last') || ''; }
+function showPwd(n){ const p = prof(n); $('pwdMsg').textContent = n ? (p.pwd ? `Paired as ${n}. Password saved on this phone.` : `No password saved for ${n}.`) : 'Not paired yet.'; }
+$('btnSave').addEventListener('click', () => {
+  const n = curName(), raw = $('inPwd').value.trim();
+  if ($('inName').value.trim()) store.set('name', $('inName').value.trim()); else store.del('name');
+  if (!raw) { showPwd(n); return; }
+  let b = /^[0-9a-f\s:]+$/i.test(raw) ? unhex(raw) : ascii(raw);
+  if (b.length !== 16) { $('pwdMsg').innerHTML = '<span class="bad">A pairing password is 16 bytes: 32 hex characters.</span>'; return; }
+  if (!n) { $('pwdMsg').innerHTML = '<span class="bad">Enter the scooter\'s Bluetooth name first.</span>'; return; }
+  saveProf(n, {pwd: hex(b)}); store.set('last', n); $('inPwd').value = ''; $('pwdMsg').innerHTML = `<span class="ok">Saved for ${n}.</span>`;
+});
+$('btnCopyPwd').addEventListener('click', async () => {
+  const p = prof(curName()).pwd; if (!p) { $('pwdMsg').textContent = 'No password saved yet.'; return; }
+  try { await navigator.clipboard.writeText(p); $('pwdMsg').textContent = 'Copied. Keep it somewhere private.'; } catch { $('pwdMsg').textContent = p; }
+});
+$('btnForget').addEventListener('click', () => {
+  const n = curName(); if (n) store.del('p:' + n); store.del('last');
+  $('pwdMsg').textContent = 'Forgotten. The next connection will ask for the power button.';
+});
+$('btnCopyLog').addEventListener('click', async () => { try { await navigator.clipboard.writeText(lines.join('\n')); } catch {} });
+
+// ---------- boot ----------
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+$('btnConn').addEventListener('click', () => {
+  if (dev && !dev.gatt.connected && !demo) { err(null); openLink().catch(e => { log('Error: ' + e.message); err(e.message); pill('err', 'Not connected'); }).finally(() => $('bnPress').hidden = true); }
+  else connect();
+});
+$('inName').value = store.get('name') || '';
+showPwd(store.get('last') || '');
+if (!navigator.bluetooth) $('bnNoBle').hidden = false;
+render();
+}
+</script>
+</body>
+</html>
