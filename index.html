@@ -462,10 +462,14 @@ async function setPassword(name, authP, stored, have){
   // pairing request waits.
   const ticker = setInterval(() => { $('pressT').textContent = Math.max(0, Math.ceil((until - Date.now()) / 1000)) + ' s'; }, 1000);
   $('pressT').textContent = Math.ceil((until - Date.now()) / 1000) + ' s';
-  let sawPending = false;
+  let sawPending = false; const started = Date.now();
   try {
     while (Date.now() < until) {
       if (!dev.gatt.connected) throw new Error('The scooter closed the connection during pairing. Turn it off and on, then tap Connect again.');
+      // If the only replies are frames we can't decrypt (another app's live session),
+      // and the button has not registered after ~12s, stop early instead of waiting 90s.
+      if (undecryptable >= 2 && !sawPending && Date.now() - started > 12000) break;
+      if (undecryptable) $('pressT').textContent = 'another app is holding the scooter…';
       let r;
       try { r = await request(board, C_PWD, 0, pwd, C_PWD, 2500); }
       catch (e) { continue; } // no reply this round, resend
