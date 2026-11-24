@@ -77,6 +77,11 @@ ol{padding-left:18px}
     <div class="seg" id="seg"></div>
   </section>
 
+  <section class="lim" id="spdSec" aria-label="Speed cap" hidden>
+    <div class="lbl"><span>Top speed (km/h)</span><span id="spdMsg"></span></div>
+    <div class="seg" id="spdSeg"></div>
+  </section>
+
   <button id="btnConn">Connect</button>
   <div class="msg press" id="bnPress" hidden>Press the scooter's power button once to approve. <span id="pressT"></span></div>
   <div class="msg bad" id="bnErr" hidden></div>
@@ -517,6 +522,8 @@ async function poll(){
     n.soc = await tryRead(VCU, 0x55, 2, u16);
     n.plug = await tryRead(VCU, 0x1F, 2, d => (d[0] >> 6) & 1);
     n.chg = await tryRead(VCU, 0x1C, 2, d => (d[0] >> 2) & 1);
+    n.vmax = await tryRead(VCU, 0x48, 2, d => d[1]); // top speed, km/h, in the high byte
+    if (n.vmax) { const c = Math.max(n.vmax, store.get('vceil') || 0); if (c !== store.get('vceil')) store.set('vceil', c); }
     if (bms != null) {
       n.volt = await tryRead(bms, 0x8C, 2, d => u16(d) / 100);
       n.amp = await tryRead(bms, 0x8D, 2, d => s16(d) / 100);
@@ -574,6 +581,7 @@ function render(){
   $('cLim').textContent = lim != null ? lim + '%' : '--';
   drawBatt();
   renderSeg();
+  renderSpd();
 }
 
 function renderSeg(){
@@ -600,12 +608,42 @@ async function setLimit(){
   limBusy = false; render();
 }
 
+// ---- top speed (register 0x48, km/h in the high byte) ----
+let spdBusy = false;
+function speedCeiling(){ return demo ? 42 : Math.max(D.vmax || 0, store.get('vceil') || 0, 25); }
+function renderSpd(){
+  const have = D.vmax != null || demo;
+  $('spdSec').hidden = !have;
+  if (!have) return;
+  const ceil = speedCeiling();
+  const opts = [...new Set([20, 25, 30, 35, ceil].filter(v => v <= ceil))].sort((a, b) => a - b);
+  const cur = D.vmax, live = (running || demo) && !spdBusy;
+  $('spdSeg').innerHTML = opts.map(v => `<button type="button" data-v="${v}" aria-pressed="${v === cur}"${live ? '' : ' disabled'}>${v === ceil && v > 35 ? v + ' max' : v}</button>`).join('');
+}
+$('spdSeg').addEventListener('click', e => { const b = e.target.closest('button'); if (!b || b.disabled) return; const v = +b.dataset.v; if (v === D.vmax) return; setSpeed(v); });
+async function setSpeed(v){
+  const m = $('spdMsg');
+  if (v > speedCeiling()) { m.innerHTML = '<span class="bad">Above your region limit</span>'; return; }
+  spdBusy = true; renderSpd(); m.textContent = 'Saving…';
+  try {
+    if (demo) { await sleep(400); D.vmax = v; }
+    else {
+      await request(VCU, C_WRITE, 0x48, Uint8Array.of(0, v & 255), C_WRESP, 3000);
+      const back = (await read(VCU, 0x48, 2))[1];
+      if (back !== v) throw new Error('kept ' + back);
+      D.vmax = v;
+    }
+    m.innerHTML = '<span class="ok">Saved</span>';
+  } catch (e) { m.innerHTML = '<span class="bad">Not saved</span>'; log('Speed write failed: ' + e.message); }
+  spdBusy = false; render();
+}
+
 
 // ---------- demo ----------
 let demoT = null;
 function startDemo(){
   demo = true; running = false; $('bnNoBle').hidden = true; pill('on', 'Sample data');
-  D = {soc: 62, bsoc: 63, plug: 1, chg: 1, volt: 50.8, amp: 3.6, rem: 7450, full: 12100, limit: 90, serial: 'SAMPLE'};
+  D = {soc: 62, bsoc: 63, plug: 1, chg: 1, volt: 50.8, amp: 3.6, rem: 7450, full: 12100, limit: 90, vmax: 42, serial: 'SAMPLE'};
   curEma = null; pickLimit = null; $('limMsg').textContent = 'Sample'; render();
   demoT = setInterval(() => {
     if (D.soc < D.limit) { D.rem += 3.6 * 1000 * 4 / 3600 * 60; D.soc = Math.min(D.limit, Math.round(D.rem / D.full * 100)); D.bsoc = D.soc + 1; D.volt = +(46 + D.soc * 0.078).toFixed(2); }
