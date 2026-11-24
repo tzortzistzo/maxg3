@@ -39,16 +39,14 @@ main{max-width:440px;margin:0 auto;padding:28px 24px 40px;min-height:100svh;disp
 .seg button{font:500 15px Inter,sans-serif;min-height:40px;border:0;border-radius:9px;background:none;color:var(--ink);cursor:pointer}
 .seg button[aria-pressed=true]{background:var(--bg);box-shadow:0 1px 3px rgba(0,0,0,.18)}
 .seg button:disabled{opacity:.35;cursor:default}
-.rain{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:62px;padding:0 18px;margin-top:10px;border:1px solid var(--line);border-radius:16px;background:none;color:var(--ink);cursor:pointer;font:inherit}
-.rain[aria-pressed=true]{border-color:var(--go)}
-.rain:disabled{opacity:.5;cursor:default}
-.rtxt{display:flex;flex-direction:column;align-items:flex-start;line-height:1.15}
-.rtxt b{font:600 18px Inter,sans-serif}.rtxt small{color:var(--mute);font-size:13px}
-.rsw{position:relative;width:52px;height:32px;border-radius:999px;background:var(--line);transition:background .2s;flex:none}
-.rain[aria-pressed=true] .rsw{background:var(--go)}
-.rsw i{position:absolute;top:3px;left:3px;width:26px;height:26px;border-radius:50%;background:#fff;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.35)}
-.rain[aria-pressed=true] .rsw i{left:23px}
-@media(prefers-reduced-motion:reduce){.rsw,.rsw i{transition:none}}
+#spdSec{margin-top:28px}
+.rain{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;width:100%;min-height:128px;border:0;border-radius:22px;background:var(--bad);color:#fff;cursor:pointer;font:inherit;transition:background .2s;box-shadow:0 6px 20px -8px var(--bad)}
+.rain[aria-pressed=true]{background:var(--go);box-shadow:0 6px 20px -8px var(--go)}
+.rain:disabled{opacity:.45;cursor:default;box-shadow:none}
+.rtitle{font:600 30px Inter,sans-serif;letter-spacing:-.01em}
+.rstate{font:600 15px Inter,sans-serif;text-transform:uppercase;letter-spacing:.14em;opacity:.9}
+#spdMsg{text-align:center;font-size:14px;margin-top:10px;min-height:18px}
+@media(prefers-reduced-motion:reduce){.rain{transition:none}}
 button:focus-visible,summary:focus-visible,input:focus-visible{outline:2px solid var(--go);outline-offset:2px}
 #btnConn{margin-top:20px;width:100%;min-height:50px;border:0;border-radius:14px;background:var(--ink);color:var(--bg);font:500 16px Inter,sans-serif;cursor:pointer}
 #btnConn[hidden]{display:none}
@@ -87,12 +85,12 @@ ol{padding-left:18px}
     <div class="seg" id="seg"></div>
   </section>
 
-  <section class="lim" id="spdSec" aria-label="Rain mode" hidden>
-    <div class="lbl"><span>Rain mode</span><span id="spdMsg"></span></div>
+  <section id="spdSec" aria-label="Rain mode" hidden>
     <button id="rainBtn" class="rain" type="button" aria-pressed="false">
-      <span class="rtxt"><b id="rainState">Off</b><small id="rainSpeed">42 km/h top speed</small></span>
-      <span class="rsw"><i></i></span>
+      <span class="rtitle">Rain mode</span>
+      <span class="rstate" id="rainState">Off</span>
     </button>
+    <div id="spdMsg"></div>
   </section>
 
   <button id="btnConn">Connect</button>
@@ -640,13 +638,11 @@ function renderSpd(){
   const have = D.vmax != null || demo;
   $('spdSec').hidden = !have;
   if (!have) return;
-  const ceil = speedCeiling();
   const on = D.vmax != null && D.vmax <= RAIN_SPEED;
   const btn = $('rainBtn');
   btn.setAttribute('aria-pressed', String(on));
   btn.disabled = !(running || demo) || spdBusy;
   $('rainState').textContent = on ? 'On' : 'Off';
-  $('rainSpeed').textContent = (on ? RAIN_SPEED : ceil) + ' km/h top speed';
 }
 $('rainBtn').addEventListener('click', () => {
   if ($('rainBtn').disabled) return;
