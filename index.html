@@ -89,6 +89,7 @@ ol{padding-left:18px}
       <li>Tap Connect, choose the scooter, press its power button once.</li>
       <li>If it won't pair, paste the existing pairing password below.</li>
     </ol>
+    <label style="display:flex;gap:8px;align-items:center;min-height:44px"><input type="checkbox" id="chkAll" style="width:20px;min-height:20px"> Show all Bluetooth devices when connecting</label>
     <label for="inName">Bluetooth name (optional)</label>
     <input id="inName" autocomplete="off" autocapitalize="characters" spellcheck="false">
     <label for="inPwd">Pairing password (32 hex)</label>
@@ -316,7 +317,15 @@ async function connect(){
   stopDemo();
   try {
     pill('busy', 'Choose scooter');
-    dev = await navigator.bluetooth.requestDevice({acceptAllDevices: true, optionalServices: [SVC_NB, SVC_NORDIC]});
+    const opt = [SVC_NB, SVC_NORDIC];
+    const all = $('chkAll').checked;
+    try {
+      dev = await navigator.bluetooth.requestDevice(all ? {acceptAllDevices: true, optionalServices: opt} :
+        {filters: [{namePrefix: '1CG'}, {namePrefix: 'NBScooter'}, {namePrefix: 'Segway'}, {services: [SVC_NB]}], optionalServices: opt});
+    } catch (e) {
+      if (e.name !== 'TypeError') throw e;
+      dev = await navigator.bluetooth.requestDevice({acceptAllDevices: true, optionalServices: opt});
+    }
     dev.addEventListener('gattserverdisconnected', onDisc);
     await openLink();
   } catch (e) {
@@ -411,12 +420,11 @@ async function setPassword(name, authP, stored, have){
       try {
         const r = await request(board, C_PWD, 0, pwd, C_PWD, 2500);
         if (r.idx === 1) { log('Pairing approved on the scooter'); return pwd; }
-      } catch (e) {
-        if (undecryptable) throw new Error('The scooter is still bound to another app and answered with its key. Paste that app\'s pairing password under Pairing password, or unlink the scooter in the Segway app first.');
-      }
+      } catch (e) { /* not approved yet: keep asking until the button is pressed */ }
       await sleep(1500);
     }
   } finally { $('bnPress').hidden = true; }
+  if (undecryptable) throw new Error('The scooter did not accept this phone. It is still paired with another app (Segway or SHU). Turn the scooter off and on, close those apps, tap Connect and press the power button once as soon as the orange text appears.');
   // Some models never confirm: try to authenticate anyway
   log('No button confirmation; trying to authenticate anyway');
   return pwd;
