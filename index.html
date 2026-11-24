@@ -413,22 +413,29 @@ async function handshake(name){
 async function setPassword(name, authP, stored, have){
   await sess.setKey(ascii(name), authP);
   const pwd = have || crypto.getRandomValues(new Uint8Array(16));
-  const until = Date.now() + 90000; undecryptable = 0;
+  // Save the password we are about to send straight away. The scooter replies to
+  // SET_PWD with two frames - "pending" (idx 0) and then "accepted" (idx 1) - and
+  // once it has accepted, this password IS the scooter's password. Saving it now
+  // means even if we miss the accept frame, the next connection authenticates with it.
+  if (!have) saveProf(name, {pwd: hex(pwd)});
+  const until = Date.now() + 90000;
   $('bnPress').hidden = false; pill('busy', 'Waiting for button');
+  // Tick the countdown every second on its own, so it stays smooth while each
+  // pairing request waits.
+  const ticker = setInterval(() => { $('pressT').textContent = Math.max(0, Math.ceil((until - Date.now()) / 1000)) + ' s'; }, 1000);
+  $('pressT').textContent = Math.ceil((until - Date.now()) / 1000) + ' s';
   try {
     while (Date.now() < until) {
-      $('pressT').textContent = Math.ceil((until - Date.now()) / 1000) + ' s';
-      if (!dev.gatt.connected) throw new Error('The scooter closed the connection while pairing. It may still be bound to another app.');
+      if (!dev.gatt.connected) throw new Error('The scooter closed the connection during pairing. Turn it off and on, then tap Connect again.');
       try {
-        const r = await request(board, C_PWD, 0, pwd, C_PWD, 2500);
-        if (r.idx === 1) { log('Pairing approved on the scooter'); return pwd; }
-      } catch (e) { /* not approved yet: keep asking until the button is pressed */ }
-      await sleep(1500);
+        // Wait specifically for the "accepted" frame (idx 1); the "pending" frame
+        // (idx 0) does not match, so it no longer ends the wait early.
+        const r = await request(board, C_PWD, 0, pwd, C_PWD, 2000, 1);
+        if (r && r.idx === 1) { log('Pairing approved on the scooter'); return pwd; }
+      } catch (e) { /* not accepted yet: keep asking while the button is pressed */ }
     }
-  } finally { $('bnPress').hidden = true; }
-  if (undecryptable) throw new Error('The scooter did not accept this phone. It is still paired with another app (Segway or SHU). Turn the scooter off and on, close those apps, tap Connect and press the power button once as soon as the orange text appears.');
-  // Some models never confirm: try to authenticate anyway
-  log('No button confirmation; trying to authenticate anyway');
+  } finally { clearInterval(ticker); $('bnPress').hidden = true; }
+  log('No confirmation yet; will try the pairing we sent');
   return pwd;
 }
 
